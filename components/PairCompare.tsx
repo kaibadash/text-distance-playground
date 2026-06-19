@@ -15,12 +15,70 @@ import {
   type NormalizeOptions,
 } from "@/lib/segment";
 
-const OP_LABELS: Record<string, string> = {
+import type { EditOp } from "@/lib/levenshtein";
+
+const OP_LABELS: Record<EditOp["type"], string> = {
   match: "一致",
   substitute: "置換",
   insert: "挿入",
   delete: "削除",
 };
+
+const LEGEND_ITEMS: { type: EditOp["type"]; color: string }[] = [
+  { type: "match", color: "var(--match)" },
+  { type: "substitute", color: "var(--substitute)" },
+  { type: "insert", color: "var(--insert)" },
+  { type: "delete", color: "var(--delete)" },
+];
+
+type ViewMode = "diff" | "align";
+
+/** diff 表示用に 1 つの連続区間を表すセグメント。changed=true で色付け。 */
+interface DiffSegment {
+  text: string;
+  changed: boolean;
+}
+
+/**
+ * 編集操作列を GitHub PR レビュー風の split diff 用に、A 側(削除前)/ B 側(追加後)の
+ * セグメント列へ変換する。隣接する同種トークンは 1 セグメントへまとめる。
+ */
+function buildDiffSides(ops: EditOp[]): {
+  left: DiffSegment[];
+  right: DiffSegment[];
+} {
+  const left: DiffSegment[] = [];
+  const right: DiffSegment[] = [];
+  const push = (arr: DiffSegment[], text: string, changed: boolean) => {
+    const last = arr[arr.length - 1];
+    if (last && last.changed === changed) last.text += text;
+    else arr.push({ text, changed });
+  };
+  for (const op of ops) {
+    switch (op.type) {
+      case "match":
+        push(left, op.source ?? "", false);
+        push(right, op.target ?? "", false);
+        break;
+      case "substitute":
+        push(left, op.source ?? "", true);
+        push(right, op.target ?? "", true);
+        break;
+      case "delete":
+        push(left, op.source ?? "", true);
+        break;
+      case "insert":
+        push(right, op.target ?? "", true);
+        break;
+    }
+  }
+  return { left, right };
+}
+
+/** 変更区間の空白は不可視になるため、可視マーカー(␣)に置換する。 */
+function visualize(text: string, changed: boolean): string {
+  return changed ? text.replace(/ /g, "␣") : text;
+}
 
 export default function PairCompare() {
   const [textA, setTextA] = useState("東京都渋谷区神宮前");
@@ -29,6 +87,7 @@ export default function PairCompare() {
   const [normalizeOptions, setNormalizeOptions] = useState<NormalizeOptions>(
     defaultNormalizeOptions,
   );
+  const [viewMode, setViewMode] = useState<ViewMode>("diff");
 
   const segmenterSupported = useMemo(() => isSegmenterSupported(), []);
 
@@ -58,6 +117,7 @@ export default function PairCompare() {
       lenA: tokensA.length,
       lenB: tokensB.length,
       counts,
+      diff: buildDiffSides(ops),
     };
   }, [textA, textB, granularity, normalizeOptions]);
 
@@ -75,7 +135,7 @@ export default function PairCompare() {
           </label>
           <textarea
             id="pair-a"
-            rows={4}
+            rows={7}
             value={textA}
             onChange={(e) => setTextA(e.target.value)}
             placeholder="比較したい文字列を入力"
@@ -87,7 +147,7 @@ export default function PairCompare() {
           </label>
           <textarea
             id="pair-b"
-            rows={4}
+            rows={7}
             value={textB}
             onChange={(e) => setTextB(e.target.value)}
             placeholder="比較したい文字列を入力"
@@ -128,9 +188,55 @@ export default function PairCompare() {
         </div>
       </div>
 
-      <label className="field-label">編集操作のアライメント</label>
+      <div className="view-switch">
+        <label className="field-label">差分の表示</label>
+        <div className="segmented" role="group" aria-label="差分の表示">
+          <button
+            type="button"
+            className={viewMode === "diff" ? "active" : ""}
+            onClick={() => setViewMode("diff")}
+          >
+            差分 (Split)
+          </button>
+          <button
+            type="button"
+            className={viewMode === "align" ? "active" : ""}
+            onClick={() => setViewMode("align")}
+          >
+            アライメント
+          </button>
+        </div>
+      </div>
+
       {result.ops.length === 0 ? (
         <div className="empty-hint">文字列を入力してください。</div>
+      ) : viewMode === "diff" ? (
+        <div className="diff-split">
+          <div className="diff-side diff-del">
+            <div className="diff-side-head">
+              <span className="diff-sign">−</span> 文字列 A(削除前)
+            </div>
+            <div className="diff-body">
+              {result.diff.left.map((seg, i) => (
+                <span key={i} className={seg.changed ? "changed" : ""}>
+                  {visualize(seg.text, seg.changed)}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="diff-side diff-ins">
+            <div className="diff-side-head">
+              <span className="diff-sign">＋</span> 文字列 B(追加後)
+            </div>
+            <div className="diff-body">
+              {result.diff.right.map((seg, i) => (
+                <span key={i} className={seg.changed ? "changed" : ""}>
+                  {visualize(seg.text, seg.changed)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="alignment">
           {result.ops.map((op, i) => {
@@ -153,25 +259,14 @@ export default function PairCompare() {
       )}
 
       <div className="legend">
-        <span>
-          <i className="swatch" style={{ background: "var(--match)" }} />
-          一致 {result.counts.match}
-        </span>
-        <span>
-          <i
-            className="swatch"
-            style={{ background: "var(--substitute)" }}
-          />
-          置換 {result.counts.substitute}
-        </span>
-        <span>
-          <i className="swatch" style={{ background: "var(--insert)" }} />
-          挿入 {result.counts.insert}
-        </span>
-        <span>
-          <i className="swatch" style={{ background: "var(--delete)" }} />
-          削除 {result.counts.delete}
-        </span>
+        {LEGEND_ITEMS.map(({ type, color }) =>
+          result.counts[type] > 0 ? (
+            <span key={type}>
+              <i className="swatch" style={{ background: color }} />
+              {OP_LABELS[type]} {result.counts[type]}
+            </span>
+          ) : null,
+        )}
       </div>
     </section>
   );
