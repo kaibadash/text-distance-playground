@@ -140,7 +140,8 @@ input[type="text"]:focus {
 }
 
 @media (max-width: 640px) {
-  .two-col {
+  .two-col,
+  .diff-split {
     grid-template-columns: 1fr;
   }
 }
@@ -312,6 +313,80 @@ input[type="text"]:focus {
 .tok .tok-sub {
   font-size: 0.6em;
   opacity: 0.85;
+}
+
+/* --- Split diff (GitHub PR レビュー風) --- */
+.view-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.view-switch .field-label {
+  margin: 0;
+}
+
+.diff-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.diff-side {
+  background: var(--surface-2);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.diff-side-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.diff-sign {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.diff-del .diff-sign {
+  color: var(--delete);
+}
+.diff-ins .diff-sign {
+  color: var(--insert);
+}
+
+.diff-body {
+  font-family: var(--mono);
+  font-size: 1rem;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-del .changed {
+  background: var(--delete-bg);
+  color: var(--delete);
+  border-radius: 3px;
+  text-decoration: line-through;
+}
+
+.diff-ins .changed {
+  background: var(--insert-bg);
+  color: var(--insert);
+  border-radius: 3px;
 }
 
 .legend {
